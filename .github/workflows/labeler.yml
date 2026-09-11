@@ -1,8 +1,9 @@
 name: Labeler
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+  schedule:
+  - cron: 25 2 * * 6
 
 permissions:
   contents: read
@@ -10,15 +11,31 @@ permissions:
 
 jobs:
   label:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.ACTIONS_RUNNER_POLICY || 
+      '{"linux":["ubuntu-24.04"],"arm64":["ubuntu-24.04-arm"],"x64":["ubuntu-24.04"],"hosted":true}').linux }}
     steps:
-      - uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: "2729701"
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-      - uses: actions/labeler@v5
-        with:
-          configuration-path: .github/labeler.yml
-          repo-token: ${{ steps.app-token.outputs.token }}
-          sync-labels: true
+    - uses: actions/create-github-app-token@v1
+      id: app-token
+      with:
+        app-id: '2729701'
+        private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+    - uses: actions/labeler@v5
+      with:
+        configuration-path: .github/labeler.yml
+        repo-token: ${{ steps.app-token.outputs.token }}
+        sync-labels: true
+    timeout-minutes: 60
+    if: ${{ (true) && (github.event_name != 'schedule' && github.event_name != 'workflow_dispatch') }}
+  weekly-review:
+    runs-on: ${{ fromJSON(vars.ACTIONS_RUNNER_POLICY || 
+      '{"linux":["ubuntu-24.04"],"arm64":["ubuntu-24.04-arm"],"x64":["ubuntu-24.04"],"hosted":true}').linux }}
+    timeout-minutes: 5
+    permissions:
+      issues: read
+      pull-requests: read
+    steps:
+    - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+      with:
+        script: |
+          const items = await github.paginate(github.rest.issues.listForRepo, {...context.repo, state: 'open', per_page: 100});
+          await core.summary.addHeading('Weekly label review').addRaw(`${items.length} open issues/PRs; event-specific handlers require a real event and configured GitHub App.`).write();
